@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>CanaryShield - Deception Forensics SOC</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    body { background-color: #0b0f19; color: #e2e8f0; padding: 24px; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #1e293b; padding-bottom: 16px; margin-bottom: 24px; }
+    h1 { font-size: 1.5rem; color: #38bdf8; display: flex; align-items: center; gap: 8px; }
+    .badge { background: #ef4444; color: #fff; font-size: 0.75rem; padding: 4px 8px; border-radius: 4px; font-weight: bold; }
+    .grid { display: grid; grid-template-columns: 350px 1fr; gap: 24px; }
+    .card { background: #131d31; border: 1px solid #1e293b; border-radius: 8px; padding: 20px; }
+    h2 { font-size: 1.1rem; margin-bottom: 16px; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.05em; }
+    label { font-size: 0.85rem; color: #94a3b8; display: block; margin-bottom: 6px; }
+    input, select, button { width: 100%; padding: 10px; margin-bottom: 14px; border-radius: 6px; border: 1px solid #334155; background: #0b0f19; color: #fff; }
+    button { background: #2563eb; font-weight: 600; cursor: pointer; border: none; }
+    button:hover { background: #1d4ed8; }
+    .stats { display: flex; gap: 12px; margin-bottom: 20px; }
+    .stat-box { flex: 1; background: #0b0f19; border: 1px solid #1e293b; padding: 12px; border-radius: 6px; text-align: center; }
+    .stat-val { font-size: 1.5rem; font-weight: bold; color: #38bdf8; }
+    table { width: 100%; border-collapse: collapse; text-align: left; font-size: 0.85rem; }
+    th, td { padding: 10px; border-bottom: 1px solid #1e293b; }
+    th { color: #64748b; font-weight: 600; }
+    .critical { color: #f87171; font-weight: bold; }
+    .token-url { word-break: break-all; font-family: monospace; color: #34d399; font-size: 0.75rem; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>🛡️ CanaryShield <span style="font-size: 0.9rem; color: #64748b;">| Deception Incident Triage Hub</span></h1>
+    <span class="badge">DEFCON 1 - MONITORING</span>
+  </header>
+
+  <div class="grid">
+    <!-- LEFT: TOKEN GENERATOR -->
+    <div class="card">
+      <h2>Generate Canary Bait</h2>
+      <label>Bait Name / Decoy File</label>
+      <input type="text" id="tokenName" placeholder="e.g. Passwords_Internal.xlsx">
+
+      <label>Bait Category</label>
+      <select id="baitType">
+        <option value="Confidential Document">Confidential Document</option>
+        <option value="Database Credential">Database Credential</option>
+        <option value="API Access Secret">API Access Secret</option>
+        <option value="Network Infrastructure">Network Infrastructure</option>
+      </select>
+
+      <button onclick="createToken()">Deploy Trap</button>
+
+      <div id="result" style="display:none; margin-top: 15px;">
+        <label>Generated Trap URL:</label>
+        <div class="token-url" id="generatedUrl"></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: LIVE INCIDENT AUDIT FEED -->
+    <div class="card">
+      <div class="stats">
+        <div class="stat-box">
+          <div>ACTIVE DECOYS</div>
+          <div class="stat-val" id="statTokens">0</div>
+        </div>
+        <div class="stat-box">
+          <div>BREACHES DETECTED</div>
+          <div class="stat-val" style="color: #ef4444;" id="statBreaches">0</div>
+        </div>
+      </div>
+
+      <h2>Forensic Breach Log (Live Telemetry)</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Time (UTC)</th>
+            <th>Attacker IP</th>
+            <th>Decoy Target</th>
+            <th>Fingerprint / Agent</th>
+            <th>Severity</th>
+          </tr>
+        </thead>
+        <tbody id="incidentTable">
+          <tr><td colspan="5" style="text-align: center; color: #64748b;">Awaiting breach telemetry...</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    const API_BASE = "http://127.0.0.1:8000";
+
+    async function loadStats() {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/stats`);
+        const data = await res.json();
+        document.getElementById('statTokens').innerText = data.active_tokens;
+        document.getElementById('statBreaches').innerText = data.total_breaches_detected;
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function loadIncidents() {
+      try {
+        const res = await fetch(`${API_BASE}/api/v1/incidents`);
+        const data = await res.json();
+        const tbody = document.getElementById('incidentTable');
+        
+        if (data.length === 0) return;
+        tbody.innerHTML = "";
+
+        data.forEach(inc => {
+          const row = document.createElement('tr');
+          const time = new Date(inc.tripped_at).toLocaleTimeString();
+          const target = inc.canary_tokens ? inc.canary_tokens.name : inc.token_id;
+
+          row.innerHTML = `
+            <td>${time}</td>
+            <td style="color: #facc15; font-family: monospace;">${inc.attacker_ip}</td>
+            <td>${target}</td>
+            <td style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${inc.user_agent}</td>
+            <td class="critical">${inc.severity}</td>
+          `;
+          tbody.appendChild(row);
+        });
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function createToken() {
+      const name = document.getElementById('tokenName').value.trim();
+      const bait_type = document.getElementById('baitType').value;
+      if (!name) return alert("Enter a decoy name");
+
+      const res = await fetch(`${API_BASE}/api/v1/tokens/create`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, bait_type })
+      });
+      const data = await res.json();
+      
+      const fullUrl = `${API_BASE}${data.canary_url}`;
+      document.getElementById('result').style.display = "block";
+      document.getElementById('generatedUrl').innerText = fullUrl;
+
+      loadStats();
+    }
+
+    // Auto-refresh feeds every 3 seconds
+    loadStats();
+    loadIncidents();
+    setInterval(() => {
+      loadStats();
+      loadIncidents();
+    }, 3000);
+  </script>
+</body>
+</html>
