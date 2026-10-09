@@ -75,7 +75,7 @@
           <button onclick="copyBeaconUrl()" class="bg-gray-800 hover:bg-gray-700 text-white px-2 py-1 rounded text-xs transition">Copy</button>
         </div>
         <div class="text-gray-500 text-[11px] pt-1">
-          Simulate an exfiltration: click or visit the URL to trigger forensic telemetry.
+          Simulate an exfiltration: visit the URL to trigger forensic telemetry.
         </div>
       </div>
     </div>
@@ -130,7 +130,6 @@
   </div>
 
   <script>
-    // Live Backend Production Endpoint
     const API_BASE = "https://canary-shield.onrender.com";
 
     const baitForm = document.getElementById("baitForm");
@@ -144,21 +143,19 @@
     const breachCountEl = document.getElementById("breachCount");
     const connStatus = document.getElementById("connStatus");
 
-    // Copy Generated Beacon URL to Clipboard
     function copyBeaconUrl() {
       generatedUrlInput.select();
-      document.execCommand("copy");
+      navigator.clipboard.writeText(generatedUrlInput.value);
       alert("Beacon Trap URL copied to clipboard!");
     }
 
-    // Deploy Trap (Create New Canary Token)
     baitForm.addEventListener("submit", async (e) => {
       e.preventDefault();
       deployBtn.disabled = true;
       deployBtn.innerText = "Deploying Trap...";
 
       try {
-        const response = await fetch(`${API_BASE}/api/v1/generate`, {
+        const response = await fetch(`${API_BASE}/api/v1/tokens/create`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -170,42 +167,38 @@
         if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
         const data = await response.json();
 
-        generatedUrlInput.value = data.beacon_url;
+        generatedUrlInput.value = data.beacon_url || `${API_BASE}/api/v1/beacon/${data.token_id || data.id}`;
         resultBox.classList.remove("hidden");
         baitNameInput.value = "";
         fetchDashboardData();
       } catch (err) {
-        alert("Failed to deploy trap. Ensure Render backend is awake. " + err.message);
+        alert("Failed to deploy trap: " + err.message);
       } finally {
         deployBtn.disabled = false;
         deployBtn.innerText = "Deploy Trap";
       }
     });
 
-    // Fetch Stats & Telemetry Log from Render
     async function fetchDashboardData() {
       try {
-        // Fetch Metrics
         const statsRes = await fetch(`${API_BASE}/api/v1/stats`);
         if (statsRes.ok) {
           const stats = await statsRes.json();
-          activeDecoysEl.innerText = stats.active_tokens ?? 0;
-          breachCountEl.innerText = stats.breaches_detected ?? 0;
+          activeDecoysEl.innerText = stats.active_tokens ?? stats.total_tokens ?? 0;
+          breachCountEl.innerText = stats.breaches_detected ?? stats.total_incidents ?? 0;
           connStatus.innerHTML = '<span class="w-2 h-2 rounded-full bg-green-500"></span> <span class="text-green-400">Live Telemetry Link Active</span>';
         }
 
-        // Fetch Incident Logs
         const incidentsRes = await fetch(`${API_BASE}/api/v1/incidents`);
         if (incidentsRes.ok) {
           const incidents = await incidentsRes.json();
           renderIncidents(incidents);
         }
       } catch (err) {
-        connStatus.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-500"></span> <span class="text-red-400">Connection Failed (Retrying)</span>';
+        connStatus.innerHTML = '<span class="w-2 h-2 rounded-full bg-red-500"></span> <span class="text-red-400">Connecting to Backend...</span>';
       }
     }
 
-    // Render incident records in the table
     function renderIncidents(incidents) {
       if (!incidents || incidents.length === 0) {
         incidentTable.innerHTML = `<tr><td colspan="5" class="py-6 text-center text-gray-500">Awaiting breach telemetry...</td></tr>`;
@@ -232,7 +225,6 @@
       }).join("");
     }
 
-    // Initialize & Poll every 3 seconds for live SOC telemetry
     fetchDashboardData();
     setInterval(fetchDashboardData, 3000);
   </script>
